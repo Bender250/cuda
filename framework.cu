@@ -8,7 +8,7 @@
 #include "kernel_CPU.C"
 
 #define STUDENTS  2048
-#define QUESTIONS 1024
+#define QUESTIONS 2048
 #define ITERS 1000
 
 void generateRandomResults(int *results, int students, int questions) {
@@ -108,9 +108,10 @@ int main(int argc, char **argv){
     for (int i = 0; i < STUDENTS; i++) {
         if (std::fabs(gpu_avg_stud[i] - avg_stud[i]) > 0.000001f) {
             printf("Error detected at index %i of avg_stud: %f should be %f.\n", i, gpu_avg_stud[i], avg_stud[i]);
-            goto cleanup; // exit after first error
+            goto here; // exit after first error
          }
     }
+here:
     for (int i = 0; i < QUESTIONS; i++) {
         if (std::fabs(gpu_avg_que[i] - avg_que[i]) > 0.000001f) {
             printf("Error detected at index %i of avg_que: %f should be %f.\n", i, gpu_avg_que[i], avg_que[i]);
