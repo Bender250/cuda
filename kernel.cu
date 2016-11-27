@@ -7,9 +7,11 @@ const u_int16_t THREAD_COUNT = 64;
 const u_int16_t THREAD_SIZE = 8;
 const u_int16_t Y_TILE_SIZE = 64;
 
-// hacking speed - u_int16_t?
-
-template <u_int16_t threads, u_int16_t cols_per_thread, u_int16_t rows_per_thread>
+/**
+ * suitable only for matrices of X % (64*8) = 0; Y % 64 = 0
+ */
+template <u_int16_t threads, u_int16_t cols_per_thread,
+          u_int16_t rows_per_thread>
 __global__ void parallel_col_sum(const int *in, float *avg_row, float *avg_col,
                                  const u_int16_t cols) {
   u_int16_t tx = u_int16_t(threadIdx.x);
@@ -25,21 +27,21 @@ __global__ void parallel_col_sum(const int *in, float *avg_row, float *avg_col,
   // Iterate over ROWS
   for (u_int16_t row = blocks_row; row < blocks_row + rows_per_thread; ++row) {
 
-    // copy input to shared mem by threads blocks (done in parallel in blocks
-    // of threads)
-    // for threads*cols_per_thread
-    #pragma unroll
+// copy input to shared mem by threads blocks (done in parallel in blocks
+// of threads)
+// for threads*cols_per_thread
+#pragma unroll
     for (u_int16_t i = 0; i < cols_per_thread; ++i) {
       tile[i * threads + tx] =
           u_int16_t(in[row * cols + col_offset + i * threads + tx]);
     }
 
-    //if (tx == 0)
-      tile_accum = 0;
+    // if (tx == 0)
+    tile_accum = 0;
     __syncthreads(); // if ( threads == 32 ) not necessary
 
     u_int16_t row_accum_thread = 0; // per thread
-    #pragma unroll
+#pragma unroll
     for (u_int16_t i = 0; i < cols_per_thread; ++i) {
       row_accum_thread += tile[i * threads + tx];
       col_res_accum[i] += tile[i * threads + tx];
@@ -99,11 +101,16 @@ void solveGPU(const int *results, float *avg_stud, float *avg_que,
   dim3 threadsPerBlock(THREAD_COUNT, 1);
   dim3 numBlocks(questions / (THREAD_COUNT * THREAD_SIZE),
                  students / Y_TILE_SIZE);
-  parallel_col_sum<THREAD_COUNT, THREAD_SIZE,
-                   Y_TILE_SIZE><<<numBlocks, threadsPerBlock>>>(
-      results, avg_stud, avg_que, questions);
-  avg_div<<<students / THREAD_COUNT, THREAD_COUNT>>>(avg_stud, questions);
-  avg_div<<<questions / THREAD_COUNT, THREAD_COUNT>>>(avg_que, students);
+  if ((questions % (64 * 8) == 0) && (students % 64 == 0)) {
+    parallel_col_sum<THREAD_COUNT, THREAD_SIZE,
+                     Y_TILE_SIZE><<<numBlocks, threadsPerBlock>>>(
+        results, avg_stud, avg_que, u_int16_t(questions));
+    avg_div<<<students / THREAD_COUNT, THREAD_COUNT>>>(avg_stud, u_int16_t(questions));
+    avg_div<<<questions / THREAD_COUNT, THREAD_COUNT>>>(avg_que, u_int16_t(students));
+  } else {
+    col_sum<<<questions / THREAD_COUNT, THREAD_COUNT>>>(results, avg_que, students, questions);
+    row_sum<<<students / THREAD_COUNT, THREAD_COUNT>>>(results, avg_stud, questions);
+  }
 
   // if input is students << questions, switch to rowsum without caching
 }
